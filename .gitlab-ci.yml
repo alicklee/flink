@@ -1,0 +1,100 @@
+variables:
+  GIT_DEPTH: "1"
+  GIT_STRATEGY: fetch
+  REPO_NAME: "gitlab.cade.com/datacenter/Flink"
+  MAVEN_OPTS: "-Djava.awt.headless=true -Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  RELEASE_DAU: "Dau-bi-beta"
+  RELEASE_SHU: "ShuShu-bi-beta"
+ 
+ 
+
+cache:
+  paths:
+    - $CI_PROJECT_DIR/.m2/repository
+  key: "$CI_BUILD_REF_NAME"
+
+stages:
+  - build-dau
+  - upload-dau-to-minio
+  - build-shushu
+  - upload-shushu-to-minio
+  
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+      when: always
+    - if: $CI_COMMIT_BRANCH == "beta"
+      when: always
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: always
+    - when: always
+ 
+
+build-dau-beta:
+  stage: build-dau
+  image: harbor.cade.com/system/maven:3.3.9-jdk-8
+  only:
+    changes:
+      - Dau/* 
+  tags:
+   - docker
+  script:  
+    - echo $CI_PROJECT_DIR
+    - cd Dau
+    - mvn clean && mvn assembly:assembly -DskipTests
+  artifacts:
+    name: $RELEASE_DAU
+    paths:
+      - Dau/target/Dau-1.0-SNAPSHOT-jar-with-dependencies.jar
+    expire_in: 2h20min
+
+build-shushu-beta:
+  stage: build-shushu
+  image: harbor.cade.com/system/maven:3.3.9-jdk-8
+  only:
+    changes:
+      - ShuShu/*
+  tags:
+   - docker
+  script:  
+    - cd ShuShu
+    - mvn clean && mvn assembly:assembly -DskipTests
+  artifacts:
+    name: $RELEASE_SHU
+    paths:
+      - ShuShu/target/ShuShu-1.0-SNAPSHOT-jar-with-dependencies.jar
+    expire_in: 2h20min
+
+
+
+upload-dau-release-to-minio:
+  dependencies: 
+    - build-dau-beta
+  stage: upload-dau-to-minio
+  image: harbor.cade.com/system/upload-flink:v1
+  timeout: 10m
+  retry: 1
+  only:
+     changes:
+      - Dau/*
+  tags:
+    - docker
+  script:
+    - minio -fileName $RELEASE_DAU.jar -filePath $CI_PROJECT_DIR/Dau/target/Dau-1.0-SNAPSHOT-jar-with-dependencies.jar
+
+upload-shushu-release-to-minio:
+  dependencies: 
+    - build-shushu-beta
+  stage: upload-shushu-to-minio
+  image: harbor.cade.com/system/upload-flink:v1
+  timeout: 10m
+  retry: 1
+  only:
+     changes:
+      - ShuShu/*
+  tags:
+    - docker
+  script:
+    - minio -fileName $RELEASE_SHU.jar -filePath $CI_PROJECT_DIR/ShuShu/target/ShuShu-1.0-SNAPSHOT-jar-with-dependencies.jar
